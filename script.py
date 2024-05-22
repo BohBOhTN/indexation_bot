@@ -1,16 +1,58 @@
 import os
 import time
+import subprocess
+import webbrowser
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from PIL import Image
 import pytesseract
 import re
+from colorama import init, Fore, Style
 
-# Configure the path to the Tesseract executable
-pytesseract.pytesseract.tesseract_cmd = r'C:\Users\baha9\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
+# Initialize colorama
+init(autoreset=True)
 
-# Set to track processed images
-processed_images = set()
+# List of required packages
+required_packages = ['watchdog', 'pillow', 'pytesseract', 'colorama']
+
+def install_packages(packages):
+    for package in packages:
+        try:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
+            print(Fore.GREEN + f'Successfully installed {package}')
+        except subprocess.CalledProcessError as e:
+            print(Fore.RED + f'Failed to install {package}: {e}')
+
+def setup_environment():
+    user_confirmation = input(Fore.CYAN + "Do you want to install the required packages? (yes/no): ").strip().lower()
+    if user_confirmation == 'yes':
+        install_packages(required_packages)
+        print(Fore.YELLOW + "\nNote: You need to install a software called Tesseract OCR.")
+        print(Fore.YELLOW + "After approving the installation of the software, your default browser will start downloading the app.\n")
+        time.sleep(1)
+
+    print(Fore.CYAN + "Opening browser to download Tesseract OCR...\n")
+    time.sleep(1)
+    webbrowser.open('https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.3.20231005.exe')
+    input(Fore.CYAN + "\nPlease install Tesseract OCR and press Enter to continue...\n")
+    
+    tesseract_path = input(Fore.CYAN + "Enter the path to the Tesseract executable (e.g., C:\\Users\\baha9\\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe): ").strip()
+    
+    # Ensure the tesseract path ends with the executable filename
+    while not os.path.isfile(tesseract_path) or not tesseract_path.endswith("tesseract.exe"):
+        print(Fore.RED + "The provided path is incorrect. Tesseract OCR is required to run this script.")
+        tesseract_path = input(Fore.CYAN + "Please enter the correct path to the Tesseract executable (e.g., C:\\Users\\baha9\\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe): ").strip()
+
+    screenshot_folder = input(Fore.CYAN + "Enter the path to the screenshot folder (or press Enter to use the default 'screenshots' folder): ").strip()
+    if not screenshot_folder:
+        screenshot_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'screenshots')
+        print(Fore.GREEN + f'Using default screenshot folder: {screenshot_folder}')
+    elif not os.path.exists(screenshot_folder):
+        print(Fore.RED + "The specified directory does not exist. Using default 'screenshots' folder.")
+        screenshot_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'screenshots')
+        print(Fore.GREEN + f'Using default screenshot folder: {screenshot_folder}')
+
+    return tesseract_path, screenshot_folder
 
 class ImageHandler(FileSystemEventHandler):
     def on_created(self, event):
@@ -24,17 +66,20 @@ class ImageHandler(FileSystemEventHandler):
             if image_name in processed_images:
                 return
             processed_images.add(image_name)
-            print(f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-            print(f'New image detected: {image_name}')
+            print(Fore.YELLOW + f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            print(Fore.GREEN + f'New image detected: {image_name}')
             # Retry mechanism to ensure the file is completely written
             for _ in range(10):
                 if os.path.exists(event.src_path):
-                    process_image(event.src_path)
+                    try:
+                        process_image(event.src_path)
+                    except Exception as e:
+                        print(Fore.RED + f'Failed to process image {event.src_path}: {e}')
                     break
                 time.sleep(1)
             else:
-                print(f'File not found after multiple attempts: {event.src_path}')
-            print(f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+                print(Fore.RED + f'File not found after multiple attempts: {event.src_path}')
+            print(Fore.YELLOW + f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 
 def process_image(image_path):
     try:
@@ -70,7 +115,7 @@ def process_image(image_path):
         question_text = ' '.join(question).strip()
         
         if not question_text:
-            print('No question found in the image.')
+            print(Fore.RED + 'No question found in the image.')
             return
         
         # Remove the first two characters from each response
@@ -82,25 +127,29 @@ def process_image(image_path):
             result[f'Response {idx + 1}'] = response
         
         # Print the result
-        print(f'The question is: {result["Question"]}')
-        print('The available options are:')
+        print(Fore.CYAN + f'The question is: {result["Question"]}')
+        print(Fore.CYAN + 'The available options are:')
         for idx, response in enumerate(responses):
-            print(f'  Option {idx + 1}: {response}')
-        print(f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            print(Fore.YELLOW + f'  Option {idx + 1}: {response}')
+        print(Fore.YELLOW + f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 
     except Exception as e:
-        print(f'Failed to process image {image_path}: {e}')
+        print(Fore.RED + f'Failed to process image {image_path}: {e}')
 
 if __name__ == "__main__":
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    image_folder = os.path.join(script_dir, 'screenshots')
+    import sys
+
+    tesseract_path, screenshot_folder = setup_environment()
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
     
     event_handler = ImageHandler()
     observer = Observer()
-    observer.schedule(event_handler, path=image_folder, recursive=False)
+    observer.schedule(event_handler, path=screenshot_folder, recursive=False)
     observer.start()
     
-    print(f'Started monitoring {image_folder} for new images.')
+    print(Fore.CYAN + f'Started monitoring {screenshot_folder} for new images.')
+    
+    processed_images = set()
     
     try:
         while True:
